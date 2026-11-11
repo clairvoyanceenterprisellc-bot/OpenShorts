@@ -59,17 +59,26 @@ Four tabs:
 
 | Platform | What you need | Where |
 |---|---|---|
-| YouTube | OAuth2 access token, scope `youtube.upload` | Google Cloud Console → create an OAuth client → run the consent flow |
+| YouTube | OAuth2 access token, scope `youtube.upload` | Google Cloud Console → create an OAuth client → `python scripts/get_youtube_token.py --client-secret path/to/client_secret.json` (see below) |
 | TikTok | Access token from a Content Posting API app | [developers.tiktok.com](https://developers.tiktok.com) (TikTok reviews Direct Post access before granting it) |
 | Instagram | Access token + IG Business account id + a **public URL** your clips are hosted at | Meta for Developers → Instagram Graph API, `instagram_content_publish` permission. Instagram ingests video by URL, not upload — a localhost dashboard can't serve that itself, so you'll need somewhere (S3, R2, your own server) to host clips publicly first. |
 
-Paste the token (and, for Instagram, the extra fields) into the Connections tab. Until a platform has a valid token, posting to it stays disabled in the Clips tab rather than silently pretending to work.
+For TikTok/Instagram, paste the token (and, for Instagram, the extra fields) straight into the Connections tab. Until a platform has a valid token, posting to it stays disabled in the Clips tab rather than silently pretending to work.
+
+**YouTube has a helper script and auto-refresh**, since access tokens pasted by hand expire in ~1 hour:
+
+```bash
+pip install -e ".[youtube-auth]"
+python scripts/get_youtube_token.py --client-secret path/to/client_secret.json
+```
+
+This runs Google's real OAuth consent flow (a browser tab opens for you to sign in) and posts the resulting token straight to the running dashboard — the token itself is never printed. It requests offline access, so a `refresh_token` gets saved alongside the access token; when the dashboard hits a 401 from YouTube's API, it transparently refreshes and retries, so once this is connected it should keep working without you re-running anything. If your Google Cloud project's OAuth consent screen is still in "Testing" mode (likely, unless you've gone through Google's verification review — `youtube.upload` is a sensitive scope), add your own Google account under **OAuth consent screen → Test users** first, or you'll hit an "Access blocked" error.
 
 Data (SQLite db, downloaded sources, cut clips) lives in `~/.openshorts/`, not in the repo.
 
 ## Status
 
-Early scaffold, built ahead of GTA 6's release so the pipeline is ready on day one. Audio-spike detection and the dashboard both work today on any gameplay video; game-specific detectors and real OAuth token refresh are the natural next steps.
+Early scaffold, built ahead of GTA 6's release so the pipeline is ready on day one. Audio-spike detection and the dashboard both work today on any gameplay video, and YouTube posting auto-refreshes its own token; game-specific detectors and the same refresh treatment for TikTok/Instagram are the natural next steps.
 
 ## License
 

@@ -27,7 +27,7 @@ def is_connected(token: str) -> bool:
     return bool(token) and len(token) > 20
 
 
-def upload(token: str, file_path: Path, title: str, description: str) -> PostResult:
+def upload(token: str, file_path: Path, title: str, description: str, **_ignored) -> PostResult:
     if not is_connected(token):
         raise NotConnectedError("No TikTok access token saved.")
 

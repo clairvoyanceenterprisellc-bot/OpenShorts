@@ -21,6 +21,16 @@ class UploadError(RuntimeError):
     """Raised when the platform's API rejects the request."""
 
 
+class TokenExpiredError(UploadError):
+    """Raised specifically for a 401 — the dashboard catches this one to try a refresh.
+
+    An uploader module that wants auto-refresh support raises this (rather than
+    a plain UploadError) on an auth failure, and exposes a module-level
+    `refresh_access_token(meta: dict) -> str`. Modules without that function
+    just never raise this, and expired tokens surface as a normal UploadError.
+    """
+
+
 @dataclass
 class PostResult:
     remote_id: str

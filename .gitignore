@@ -13,3 +13,7 @@ dist/
 *.mov
 *.wav
 clips/
+
+# OAuth secrets — never commit these
+client_secret*.json
+*.token.json

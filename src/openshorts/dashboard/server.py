@@ -16,9 +16,39 @@ from pydantic import BaseModel
 from openshorts.dashboard import db, pipeline
 from openshorts.dashboard.categorize import ALL_CATEGORIES, CATEGORY_LABELS
 from openshorts.dashboard.uploaders import REGISTRY as UPLOADERS
-from openshorts.dashboard.uploaders.base import NotConnectedError, UploadError
+from openshorts.dashboard.uploaders.base import NotConnectedError, TokenExpiredError, UploadError
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _persist_token(platform: str, token: str) -> None:
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE connections SET access_token = ?, updated_at = ? WHERE platform = ?",
+            (token, time.time(), platform),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _call_with_refresh(platform: str, connection: dict, call):
+    """Run `call(access_token)`; on a TokenExpiredError, refresh once (if the
+    uploader supports it) and retry. `connection` is mutated in place so a
+    caller looping over multiple calls for the same platform reuses the
+    refreshed token instead of refreshing again on every iteration."""
+    try:
+        return call(connection["access_token"])
+    except TokenExpiredError:
+        refresher = getattr(UPLOADERS[platform], "refresh_access_token", None)
+        if not refresher:
+            raise
+        meta = json.loads(connection["meta_json"] or "{}")
+        new_token = refresher(meta)
+        _persist_token(platform, new_token)
+        connection["access_token"] = new_token
+        return call(new_token)
 
 
 @asynccontextmanager
@@ -207,23 +237,26 @@ def post_clip(clip_id: int, body: PostIn) -> dict:
         clip = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
         if not clip:
             raise HTTPException(404, "Clip not found")
-        connection = conn.execute(
+        connection_row = conn.execute(
             "SELECT * FROM connections WHERE platform = ?", (body.platform,)
         ).fetchone()
     finally:
         conn.close()
 
-    if not connection or not connection["connected"]:
+    if not connection_row or not connection_row["connected"]:
         raise HTTPException(
             400,
             f"{body.platform} isn't connected yet. Add an access token in the Connections tab first.",
         )
 
+    connection = dict(connection_row)
     uploader = UPLOADERS[body.platform]
-    meta = json.loads(connection["meta_json"] or "{}")
+    extra = json.loads(connection["meta_json"] or "{}")
     try:
-        result = uploader.upload(
-            connection["access_token"], Path(clip["file_path"]), body.title, body.description, **meta
+        result = _call_with_refresh(
+            body.platform,
+            connection,
+            lambda token: uploader.upload(token, Path(clip["file_path"]), body.title, body.description, **extra),
         )
     except NotConnectedError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -306,7 +339,10 @@ def refresh_stats() -> dict:
                 continue
             uploader = UPLOADERS[post["platform"]]
             try:
-                stats = uploader.get_stats(connection["access_token"], post["remote_id"])
+                stats = _call_with_refresh(
+                    post["platform"], connection,
+                    lambda token: uploader.get_stats(token, post["remote_id"]),
+                )
             except (NotConnectedError, UploadError):
                 failed += 1
                 continue
