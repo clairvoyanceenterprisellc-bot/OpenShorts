@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from openshorts.detect import detect_highlights
-from openshorts.ffmpeg_utils import cut_clip
+from openshorts.ffmpeg_utils import SHORTS_MAX_DURATION, cut_clip
 
 
 def _common_detect_options(f):
@@ -54,9 +54,13 @@ def scan(video: Path, threshold: float, window_s: float, min_gap_s: float,
 @click.argument("video", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--out", "out_dir", type=click.Path(path_type=Path), default=Path("clips"),
               show_default=True, help="Directory to write clips into.")
+@click.option("--vertical/--no-vertical", default=True, show_default=True,
+              help="Reframe to a 1080x1920 vertical canvas for Shorts/Reels/TikTok.")
+@click.option("--max-duration", default=SHORTS_MAX_DURATION, show_default=True,
+              help="Hard cap on clip length in seconds, regardless of lead-in/lead-out.")
 @_common_detect_options
-def clip(video: Path, out_dir: Path, threshold: float, window_s: float, min_gap_s: float,
-          lead_in_s: float, lead_out_s: float) -> None:
+def clip(video: Path, out_dir: Path, vertical: bool, max_duration: float, threshold: float,
+          window_s: float, min_gap_s: float, lead_in_s: float, lead_out_s: float) -> None:
     """Detect highlights in VIDEO and cut each one into OUT_DIR."""
     highlights = detect_highlights(
         video, window_s=window_s, threshold=threshold, min_gap_s=min_gap_s,
@@ -70,7 +74,7 @@ def clip(video: Path, out_dir: Path, threshold: float, window_s: float, min_gap_
     for i, h in enumerate(highlights, 1):
         out_path = out_dir / f"{video.stem}_clip{i:02d}.mp4"
         click.echo(f"Cutting clip {i}/{len(highlights)} -> {out_path}")
-        cut_clip(video, out_path, h.clip_start, h.clip_duration)
+        cut_clip(video, out_path, h.clip_start, h.clip_duration, vertical=vertical, max_duration=max_duration)
     click.echo(f"\nDone. {len(highlights)} clip(s) written to {out_dir}/")
 
 

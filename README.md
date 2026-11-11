@@ -9,7 +9,7 @@ Built to be ready for GTA 6: point it at a recording session, get back a folder 
 1. **Extract audio** from the source video with `ffmpeg`.
 2. **Score loudness over time** using a rolling RMS window — sudden spikes (explosions, gunfire, shouting, chat reactions) usually mean something happened.
 3. **Find peaks** above a threshold, merge nearby ones, and pad each with a configurable amount of lead-in/lead-out.
-4. **Cut clips** from the source video at those timestamps with `ffmpeg` (stream copy when possible, falling back to re-encode).
+4. **Cut clips** from the source video at those timestamps with `ffmpeg`, reframed to a 1080x1920 vertical canvas and capped at 60 seconds — actual short-format output, not a trimmed-down landscape long-form video. The source footage isn't cropped to get there: it's scaled to fit the vertical frame's width with a blurred, cropped copy of itself filling the rest, so nothing on the sides of the gameplay gets cut off.
 
 This is a simple, model-free MVP. It doesn't know what GTA 6 looks like yet — it just finds "loud moments." That's deliberately the first slice: it works on any gameplay footage today, and more detectors (kill-feed OCR, scene-cut detection, chat/Twitch reaction mining) can be added later behind the same `Highlight` interface.
 
@@ -35,6 +35,10 @@ openshorts clip session.mp4 --out clips/
 
 # Tune sensitivity
 openshorts clip session.mp4 --out clips/ --threshold 2.5 --min-gap 20 --lead-in 3 --lead-out 5
+
+# Keep the source's original landscape framing instead of reframing vertical, or change the length cap
+openshorts clip session.mp4 --out clips/ --no-vertical
+openshorts clip session.mp4 --out clips/ --max-duration 30
 ```
 
 ## Dashboard
@@ -48,7 +52,7 @@ openshorts dashboard
 
 Four tabs:
 
-- **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done).
+- **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done). Clips always come out vertical (1080x1920) and capped at 60 seconds, ready to post as-is — the dashboard doesn't have a `--no-vertical` equivalent, since every clip from here is meant to go straight to a platform that expects Shorts/Reels format.
 - **Clips** — every clip generated, filterable by category (**Best Moments**, **Funny Clips**, **Tips & Tricks**, **Unsorted**), playable inline, re-taggable with a dropdown, and postable to any connected platform.
 - **Connections** — add an access token per platform (YouTube, TikTok, Instagram) to enable posting/stats for it. Not connected by default — see below.
 - **Stats** — total views, watch time, and best-performing clip, pulled live from each platform's API once connected.
