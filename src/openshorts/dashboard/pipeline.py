@@ -41,10 +41,12 @@ def _is_url(value: str) -> bool:
     return urlparse(value).scheme in ("http", "https")
 
 
-def _set_status(conn, source_id: int, status: str, error: str | None = None) -> None:
+def _set_status(
+    conn, source_id: int, status: str, error: str | None = None, clip_count: int | None = None,
+) -> None:
     conn.execute(
-        "UPDATE sources SET status = ?, error = ? WHERE id = ?",
-        (status, error, source_id),
+        "UPDATE sources SET status = ?, error = ?, clip_count = ? WHERE id = ?",
+        (status, error, clip_count, source_id),
     )
     conn.commit()
 
@@ -89,11 +91,23 @@ def _download(url: str, source_id: int) -> Path:
     return path
 
 
-def ingest_source(source_id: int, url_or_path: str, db_path: Path | None = None) -> None:
+def ingest_source(
+    source_id: int,
+    url_or_path: str,
+    db_path: Path | None = None,
+    threshold: float = 2.5,
+    window_s: float = 0.5,
+    min_gap_s: float = 15.0,
+    lead_in_s: float = 3.0,
+    lead_out_s: float = 5.0,
+) -> None:
     """Run the full pipeline for one source: download -> detect -> cut -> categorize.
 
     Meant to run as a background task; all state transitions are written to
-    the `sources`/`clips` tables so the UI can poll for progress.
+    the `sources`/`clips` tables so the UI can poll for progress. `clip_count`
+    is always recorded on completion (including 0) so the UI can tell "done,
+    found nothing" apart from "still working" -- a lower `threshold` usually
+    finds highlights in quieter/more consistent audio.
     """
     conn = db.connect(db_path)
     try:
@@ -106,10 +120,13 @@ def ingest_source(source_id: int, url_or_path: str, db_path: Path | None = None)
                 raise FileNotFoundError(f"No such file: {video_path}")
 
         _set_status(conn, source_id, "detecting")
-        highlights = detect_highlights(video_path)
+        highlights = detect_highlights(
+            video_path, window_s=window_s, threshold=threshold, min_gap_s=min_gap_s,
+            lead_in_s=lead_in_s, lead_out_s=lead_out_s,
+        )
 
         if not highlights:
-            _set_status(conn, source_id, "done")
+            _set_status(conn, source_id, "done", clip_count=0)
             return
 
         categories = assign_categories([h.score for h in highlights])
@@ -126,7 +143,7 @@ def ingest_source(source_id: int, url_or_path: str, db_path: Path | None = None)
             )
             conn.commit()
 
-        _set_status(conn, source_id, "done")
+        _set_status(conn, source_id, "done", clip_count=len(highlights))
     except Exception as exc:  # pipeline runs in a background task — surface the error, don't crash it
         _set_status(conn, source_id, "error", error=str(exc))
     finally:

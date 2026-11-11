@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS sources (
     title TEXT,
     status TEXT NOT NULL DEFAULT 'queued',
     error TEXT,
+    clip_count INTEGER,
     created_at REAL NOT NULL
 );
 
@@ -77,6 +78,10 @@ def init_db(db_path: Path | None = None) -> None:
     conn = connect(db_path)
     try:
         conn.executescript(SCHEMA)
+        try:  # migrate DBs created before clip_count existed
+            conn.execute("ALTER TABLE sources ADD COLUMN clip_count INTEGER")
+        except sqlite3.OperationalError:
+            pass
         for platform in ("youtube", "tiktok", "instagram"):
             conn.execute(
                 "INSERT OR IGNORE INTO connections (platform, connected, updated_at) VALUES (?, 0, ?)",

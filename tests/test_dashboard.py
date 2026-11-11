@@ -38,6 +38,47 @@ def synthetic_video(tmp_path: Path) -> Path:
     return out
 
 
+@pytest.fixture
+def flat_video(tmp_path: Path) -> Path:
+    """A video with no loud burst -- should finish with zero highlights, not an error."""
+    out = tmp_path / "flat.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error",
+            "-f", "lavfi", "-i", "color=c=green:s=320x240:d=5:r=10",
+            "-f", "lavfi", "-i", "sine=frequency=220:duration=5,volume=0.05",
+            "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac",
+            "-t", "5",
+            str(out),
+        ],
+        check=True, capture_output=True,
+    )
+    return out
+
+
+@requires_ffmpeg
+def test_zero_highlights_is_done_not_error(isolated_dashboard, flat_video):
+    """A completed source with no highlights must be distinguishable from 'still working'
+    or an error -- that distinction is exactly what the UI uses to show 'found nothing'."""
+    client = TestClient(app)
+
+    resp = client.post("/api/sources", json={"url_or_path": str(flat_video)})
+    source_id = resp.json()["id"]
+
+    for _ in range(30):
+        sources = client.get("/api/sources").json()
+        status = next(s["status"] for s in sources if s["id"] == source_id)
+        if status in ("done", "error"):
+            break
+        time.sleep(1)
+
+    source = next(s for s in sources if s["id"] == source_id)
+    assert source["status"] == "done"
+    assert source["clip_count"] == 0
+    assert source["error"] is None
+    assert client.get("/api/clips").json() == []
+
+
 @requires_ffmpeg
 def test_full_pipeline_via_api(isolated_dashboard, synthetic_video):
     client = TestClient(app)
@@ -55,6 +96,8 @@ def test_full_pipeline_via_api(isolated_dashboard, synthetic_video):
             break
         time.sleep(1)
     assert status == "done", sources
+    source = next(s for s in sources if s["id"] == source_id)
+    assert source["clip_count"] == 1  # so the UI can tell "done, found nothing" from "still working"
 
     clips = client.get("/api/clips").json()
     assert len(clips) == 1

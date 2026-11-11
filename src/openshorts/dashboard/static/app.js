@@ -56,6 +56,12 @@ function statusLabel(status) {
            clipping: "Cutting clips", done: "Done", error: "Error" }[status] || status;
 }
 
+function doneBadge(s) {
+  if (s.clip_count === null || s.clip_count === undefined) return statusLabel(s.status);
+  if (s.clip_count === 0) return "Done — 0 clips found";
+  return `Done — ${s.clip_count} clip${s.clip_count === 1 ? "" : "s"}`;
+}
+
 async function loadSources() {
   const sources = await api("/api/sources");
   const list = $("#sources-list");
@@ -66,8 +72,9 @@ async function loadSources() {
   list.innerHTML = sources.map((s) => `
     <div class="source-row">
       <span class="src-name" title="${escapeHtml(s.url_or_path)}">${escapeHtml(s.title || s.url_or_path)}</span>
-      <span class="status-badge status-${s.status}">${statusLabel(s.status)}</span>
+      <span class="status-badge status-${s.status}${s.status === "done" && s.clip_count === 0 ? " status-zero" : ""}">${s.status === "done" ? doneBadge(s) : statusLabel(s.status)}</span>
     </div>
+    ${s.status === "done" && s.clip_count === 0 ? `<p class="hint">No highlights crossed the sensitivity threshold. Try dragging "Sensitivity" lower and re-adding this video.</p>` : ""}
     ${s.error ? `<p class="hint" style="color:var(--bad)">${escapeHtml(s.error)}</p>` : ""}
   `).join("");
 
@@ -79,12 +86,19 @@ async function loadSources() {
 }
 
 function initAddForm() {
+  const thresholdInput = $("#source-threshold");
+  const thresholdValue = $("#source-threshold-value");
+  thresholdInput.addEventListener("input", () => { thresholdValue.textContent = thresholdInput.value; });
+
   $("#source-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const input = $("#source-input");
     const hint = $("#source-hint");
     try {
-      await api("/api/sources", { method: "POST", body: JSON.stringify({ url_or_path: input.value }) });
+      await api("/api/sources", {
+        method: "POST",
+        body: JSON.stringify({ url_or_path: input.value, threshold: parseFloat(thresholdInput.value) }),
+      });
       hint.textContent = "Queued — watch progress below.";
       input.value = "";
       loadSources();

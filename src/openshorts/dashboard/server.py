@@ -71,6 +71,8 @@ def index() -> FileResponse:
 class SourceIn(BaseModel):
     url_or_path: str
     title: Optional[str] = None
+    threshold: float = 2.5
+    min_gap_s: float = 15.0
 
 
 @app.post("/api/sources")
@@ -86,7 +88,10 @@ def create_source(body: SourceIn, background_tasks: BackgroundTasks) -> dict:
     finally:
         conn.close()
 
-    background_tasks.add_task(pipeline.ingest_source, source_id, body.url_or_path)
+    background_tasks.add_task(
+        pipeline.ingest_source, source_id, body.url_or_path,
+        threshold=body.threshold, min_gap_s=body.min_gap_s,
+    )
     return {"id": source_id, "status": "queued"}
 
 
