@@ -53,6 +53,8 @@ openshorts dashboard
 Four tabs:
 
 - **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done). Clips always come out vertical (1080x1920) and capped at 60 seconds, ready to post as-is — the dashboard doesn't have a `--no-vertical` equivalent, since every clip from here is meant to go straight to a platform that expects Shorts/Reels format.
+
+  YouTube increasingly bot-checks anonymous downloads ("Sign in to confirm you're not a bot"). If you hit that, export your youtube.com cookies with a browser extension (e.g. "Get cookies.txt LOCALLY", Netscape format) and save the file to `~/.openshorts/youtube_cookies.txt` — the dashboard uses it automatically once it's there. (A *live* read from a running Chrome doesn't work reliably on Windows since Chrome locks its own cookie database; the exported file sidesteps that.)
 - **Clips** — every clip generated, filterable by category (**Best Moments**, **Funny Clips**, **Tips & Tricks**, **Unsorted**), playable inline, re-taggable with a dropdown, and postable to any connected platform.
 - **Connections** — add an access token per platform (YouTube, TikTok, Instagram) to enable posting/stats for it. Not connected by default — see below.
 - **Stats** — total views, watch time, and best-performing clip, pulled live from each platform's API once connected.

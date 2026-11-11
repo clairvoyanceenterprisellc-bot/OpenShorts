@@ -15,6 +15,19 @@ DATA_DIR = db.APP_DIR
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 CLIPS_DIR = DATA_DIR / "clips"
 
+# YouTube increasingly rate-limits/bot-checks anonymous yt-dlp requests.
+# Reusing real browser cookies (you're presumably logged in) gets past that.
+#
+# A *live* browser cookie read (cookiesfrombrowser) fails on Windows whenever
+# the browser is actually open -- Chrome holds an exclusive lock on its own
+# cookie database, so yt-dlp can't copy it (github.com/yt-dlp/yt-dlp/issues/7271).
+# An exported cookies.txt file sidesteps that entirely and is what actually
+# works reliably with the browser left running. Export one with a browser
+# extension like "Get cookies.txt LOCALLY" (youtube.com, Netscape format) and
+# save it here; this falls back to a live browser read if the file's missing.
+COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
+COOKIES_FROM_BROWSER = "chrome"
+
 
 def _is_url(value: str) -> bool:
     return urlparse(value).scheme in ("http", "https")
@@ -40,15 +53,31 @@ def _download(url: str, source_id: int) -> Path:
         "quiet": True,
         "no_warnings": True,
     }
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        path = Path(ydl.prepare_filename(info))
-        if not path.exists():
-            # merge_output_format can change the extension after download
-            mp4_path = path.with_suffix(".mp4")
-            if mp4_path.exists():
-                path = mp4_path
-        return path
+    if COOKIES_FILE.exists():
+        opts["cookiefile"] = str(COOKIES_FILE)
+    else:
+        opts["cookiesfrombrowser"] = (COOKIES_FROM_BROWSER,)
+
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+    except yt_dlp.utils.DownloadError as exc:
+        if "cookie" in str(exc).lower() and not COOKIES_FILE.exists():
+            raise RuntimeError(
+                f"{exc}\n\nThis is a known issue reading cookies from a running Chrome on Windows. "
+                f"Export your youtube.com cookies with a browser extension (e.g. 'Get cookies.txt "
+                f"LOCALLY') and save the file to {COOKIES_FILE} -- that avoids the live-browser read "
+                f"entirely."
+            ) from exc
+        raise
+
+    path = Path(ydl.prepare_filename(info))
+    if not path.exists():
+        # merge_output_format can change the extension after download
+        mp4_path = path.with_suffix(".mp4")
+        if mp4_path.exists():
+            path = mp4_path
+    return path
 
 
 def ingest_source(source_id: int, url_or_path: str, db_path: Path | None = None) -> None:
