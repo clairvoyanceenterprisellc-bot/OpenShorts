@@ -43,7 +43,7 @@ A local web dashboard sits on top of the CLI: drop in a stream/video link, watch
 
 ```bash
 openshorts dashboard
-# -> http://127.0.0.1:8787
+# -> http://127.0.0.1:8788
 ```
 
 Four tabs:
