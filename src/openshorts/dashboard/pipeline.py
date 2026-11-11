@@ -28,6 +28,14 @@ CLIPS_DIR = DATA_DIR / "clips"
 COOKIES_FILE = DATA_DIR / "youtube_cookies.txt"
 COOKIES_FROM_BROWSER = "chrome"
 
+# yt-dlp needs to solve a JS challenge to get real video formats out of
+# YouTube (otherwise you silently get storyboard-only "formats" and a
+# confusing "Requested format is not available" error) -- see the EJS wiki:
+# https://github.com/yt-dlp/yt-dlp/wiki/EJS. It only tries the Deno runtime
+# by default; explicitly enabling node here lets it use the Node.js already
+# on this machine instead of also requiring Deno.
+JS_RUNTIMES = {"node": {}}
+
 
 def _is_url(value: str) -> bool:
     return urlparse(value).scheme in ("http", "https")
@@ -52,6 +60,7 @@ def _download(url: str, source_id: int) -> Path:
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
+        "js_runtimes": JS_RUNTIMES,
     }
     if COOKIES_FILE.exists():
         opts["cookiefile"] = str(COOKIES_FILE)

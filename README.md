@@ -17,6 +17,7 @@ This is a simple, model-free MVP. It doesn't know what GTA 6 looks like yet — 
 
 - Python 3.10+
 - [ffmpeg](https://ffmpeg.org/) and `ffprobe` on your `PATH`
+- For the dashboard's "drop a YouTube link" feature: [Node.js](https://nodejs.org) 22+ on your `PATH` (yt-dlp needs a JS runtime to solve YouTube's signature challenge — see the Dashboard section below) and, on Windows, cookies exported to a file (Chrome's live cookie database can't be read directly)
 
 ## Install
 
@@ -54,7 +55,10 @@ Four tabs:
 
 - **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done). Clips always come out vertical (1080x1920) and capped at 60 seconds, ready to post as-is — the dashboard doesn't have a `--no-vertical` equivalent, since every clip from here is meant to go straight to a platform that expects Shorts/Reels format.
 
-  YouTube increasingly bot-checks anonymous downloads ("Sign in to confirm you're not a bot"). If you hit that, export your youtube.com cookies with a browser extension (e.g. "Get cookies.txt LOCALLY", Netscape format) and save the file to `~/.openshorts/youtube_cookies.txt` — the dashboard uses it automatically once it's there. (A *live* read from a running Chrome doesn't work reliably on Windows since Chrome locks its own cookie database; the exported file sidesteps that.)
+  **Two separate things have to work for a YouTube URL to download, and both bit us in testing:**
+
+  1. **Auth.** YouTube increasingly bot-checks anonymous downloads ("Sign in to confirm you're not a bot"). Reading cookies live from a running Chrome (`cookiesfrombrowser`) doesn't work on Windows at all — not just a file-lock issue, modern Chrome's "App-Bound Encryption" blocks yt-dlp's decryption outright (closing Chrome first doesn't help). The fix: export your youtube.com cookies with a browser extension (e.g. "Get cookies.txt LOCALLY", Netscape format) and save the file to `~/.openshorts/youtube_cookies.txt` — the dashboard uses it automatically once it's there, no live browser access needed.
+  2. **Format extraction.** YouTube requires solving a JS signature challenge to get real video/audio formats back — without it, yt-dlp silently gets only storyboard thumbnails and fails with a confusing "Requested format is not available" error. This needs a JS runtime on `PATH` (Node.js 22+ works; install the `yt-dlp-ejs` package, already a dependency here) — see [yt-dlp's EJS wiki](https://github.com/yt-dlp/yt-dlp/wiki/EJS) for background. Only Deno is tried by default; the dashboard explicitly enables Node instead since that's more commonly already installed.
 - **Clips** — every clip generated, filterable by category (**Best Moments**, **Funny Clips**, **Tips & Tricks**, **Unsorted**), playable inline, re-taggable with a dropdown, and postable to any connected platform.
 - **Connections** — add an access token per platform (YouTube, TikTok, Instagram) to enable posting/stats for it. Not connected by default — see below.
 - **Stats** — total views, watch time, and best-performing clip, pulled live from each platform's API once connected.
