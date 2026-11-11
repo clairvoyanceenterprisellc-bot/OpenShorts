@@ -74,5 +74,16 @@ def clip(video: Path, out_dir: Path, threshold: float, window_s: float, min_gap_
     click.echo(f"\nDone. {len(highlights)} clip(s) written to {out_dir}/")
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8787, show_default=True)
+def dashboard(host: str, port: int) -> None:
+    """Launch the local web dashboard at http://HOST:PORT."""
+    from openshorts.dashboard.__main__ import main as run_dashboard
+
+    click.echo(f"OpenShorts dashboard running at http://{host}:{port}")
+    run_dashboard(host=host, port=port)
+
+
 if __name__ == "__main__":
     main()

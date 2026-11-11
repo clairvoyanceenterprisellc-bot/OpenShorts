@@ -1,0 +1,322 @@
+"""FastAPI app for the OpenShorts dashboard."""
+
+from __future__ import annotations
+
+import json
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Optional
+
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from openshorts.dashboard import db, pipeline
+from openshorts.dashboard.categorize import ALL_CATEGORIES, CATEGORY_LABELS
+from openshorts.dashboard.uploaders import REGISTRY as UPLOADERS
+from openshorts.dashboard.uploaders.base import NotConnectedError, UploadError
+
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db.init_db()
+    yield
+
+
+app = FastAPI(title="OpenShorts Dashboard", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+# ---------------------------------------------------------------- sources --
+
+class SourceIn(BaseModel):
+    url_or_path: str
+    title: Optional[str] = None
+
+
+@app.post("/api/sources")
+def create_source(body: SourceIn, background_tasks: BackgroundTasks) -> dict:
+    conn = db.connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO sources (url_or_path, title, status, created_at) VALUES (?, ?, 'queued', ?)",
+            (body.url_or_path, body.title, time.time()),
+        )
+        conn.commit()
+        source_id = cur.lastrowid
+    finally:
+        conn.close()
+
+    background_tasks.add_task(pipeline.ingest_source, source_id, body.url_or_path)
+    return {"id": source_id, "status": "queued"}
+
+
+@app.get("/api/sources")
+def list_sources() -> list[dict]:
+    conn = db.connect()
+    try:
+        rows = conn.execute("SELECT * FROM sources ORDER BY created_at DESC").fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------------ clips --
+
+class CategoryIn(BaseModel):
+    category: str
+
+
+@app.get("/api/clips")
+def list_clips(category: Optional[str] = None) -> list[dict]:
+    conn = db.connect()
+    try:
+        query = "SELECT * FROM clips"
+        params: tuple = ()
+        if category:
+            query += " WHERE category = ?"
+            params = (category,)
+        query += " ORDER BY created_at DESC"
+        clips = [dict(r) for r in conn.execute(query, params).fetchall()]
+
+        for clip in clips:
+            posts = conn.execute(
+                "SELECT platform, remote_url, posted_at FROM posts WHERE clip_id = ? ORDER BY posted_at",
+                (clip["id"],),
+            ).fetchall()
+            clip["posts"] = [dict(p) for p in posts]
+            clip["category_label"] = CATEGORY_LABELS.get(clip["category"], clip["category"])
+        return clips
+    finally:
+        conn.close()
+
+
+@app.get("/api/clips/{clip_id}/file")
+def get_clip_file(clip_id: int) -> FileResponse:
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT file_path FROM clips WHERE id = ?", (clip_id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(404, "Clip not found")
+    path = Path(row["file_path"])
+    if not path.exists():
+        raise HTTPException(404, "Clip file missing on disk")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.patch("/api/clips/{clip_id}")
+def update_clip_category(clip_id: int, body: CategoryIn) -> dict:
+    if body.category not in ALL_CATEGORIES:
+        raise HTTPException(400, f"Unknown category. Must be one of {list(ALL_CATEGORIES)}")
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE clips SET category = ? WHERE id = ?", (body.category, clip_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"id": clip_id, "category": body.category}
+
+
+# ------------------------------------------------------------- connections --
+
+class ConnectionIn(BaseModel):
+    access_token: str
+    meta: Optional[dict] = None
+
+
+@app.get("/api/connections")
+def list_connections() -> list[dict]:
+    conn = db.connect()
+    try:
+        rows = conn.execute("SELECT * FROM connections").fetchall()
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        d = dict(r)
+        token = d.pop("access_token", None) or ""
+        d["token_preview"] = f"...{token[-4:]}" if token else None
+        out.append(d)
+    return out
+
+
+@app.post("/api/connections/{platform}")
+def save_connection(platform: str, body: ConnectionIn) -> dict:
+    if platform not in UPLOADERS:
+        raise HTTPException(404, f"Unknown platform '{platform}'")
+    uploader = UPLOADERS[platform]
+    connected = uploader.is_connected(body.access_token)
+    conn = db.connect()
+    try:
+        conn.execute(
+            """INSERT INTO connections (platform, access_token, meta_json, connected, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(platform) DO UPDATE SET
+                 access_token = excluded.access_token,
+                 meta_json = excluded.meta_json,
+                 connected = excluded.connected,
+                 updated_at = excluded.updated_at""",
+            (platform, body.access_token, json.dumps(body.meta or {}), int(connected), time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"platform": platform, "connected": connected}
+
+
+@app.delete("/api/connections/{platform}")
+def clear_connection(platform: str) -> dict:
+    conn = db.connect()
+    try:
+        conn.execute(
+            "UPDATE connections SET access_token = NULL, connected = 0, updated_at = ? WHERE platform = ?",
+            (time.time(), platform),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"platform": platform, "connected": False}
+
+
+# -------------------------------------------------------------------- post --
+
+class PostIn(BaseModel):
+    platform: str
+    title: Optional[str] = "OpenShorts clip"
+    description: Optional[str] = ""
+
+
+@app.post("/api/clips/{clip_id}/post")
+def post_clip(clip_id: int, body: PostIn) -> dict:
+    if body.platform not in UPLOADERS:
+        raise HTTPException(404, f"Unknown platform '{body.platform}'")
+
+    conn = db.connect()
+    try:
+        clip = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+        if not clip:
+            raise HTTPException(404, "Clip not found")
+        connection = conn.execute(
+            "SELECT * FROM connections WHERE platform = ?", (body.platform,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not connection or not connection["connected"]:
+        raise HTTPException(
+            400,
+            f"{body.platform} isn't connected yet. Add an access token in the Connections tab first.",
+        )
+
+    uploader = UPLOADERS[body.platform]
+    meta = json.loads(connection["meta_json"] or "{}")
+    try:
+        result = uploader.upload(
+            connection["access_token"], Path(clip["file_path"]), body.title, body.description, **meta
+        )
+    except NotConnectedError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except UploadError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+    conn = db.connect()
+    try:
+        conn.execute(
+            """INSERT INTO posts (clip_id, platform, remote_id, remote_url, status, posted_at)
+               VALUES (?, ?, ?, ?, 'posted', ?)""",
+            (clip_id, body.platform, result.remote_id, result.remote_url, time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"platform": body.platform, "remote_id": result.remote_id, "remote_url": result.remote_url}
+
+
+# ------------------------------------------------------------------- stats --
+
+@app.get("/api/stats")
+def get_stats() -> dict:
+    conn = db.connect()
+    try:
+        posts = conn.execute(
+            """SELECT p.id, p.clip_id, p.platform, p.remote_id, p.remote_url, c.category
+               FROM posts p JOIN clips c ON c.id = p.clip_id"""
+        ).fetchall()
+
+        total_views = 0
+        total_watch_time = 0.0
+        by_platform: dict[str, dict] = {}
+        best = None  # (views, post_row)
+
+        for post in posts:
+            latest = conn.execute(
+                "SELECT * FROM stats WHERE post_id = ? ORDER BY fetched_at DESC LIMIT 1",
+                (post["id"],),
+            ).fetchone()
+            views = latest["views"] if latest else 0
+            watch_time = (latest["watch_time_seconds"] or 0) if latest else 0
+
+            total_views += views
+            total_watch_time += watch_time
+
+            bucket = by_platform.setdefault(post["platform"], {"views": 0, "watch_time_seconds": 0, "posts": 0})
+            bucket["views"] += views
+            bucket["watch_time_seconds"] += watch_time
+            bucket["posts"] += 1
+
+            if best is None or views > best[0]:
+                best = (views, dict(post))
+
+        return {
+            "total_views": total_views,
+            "total_watch_time_seconds": total_watch_time,
+            "by_platform": by_platform,
+            "best_performing": best[1] if best else None,
+            "has_connections": any(
+                dict(r)["connected"] for r in conn.execute("SELECT connected FROM connections").fetchall()
+            ),
+        }
+    finally:
+        conn.close()
+
+
+@app.post("/api/stats/refresh")
+def refresh_stats() -> dict:
+    conn = db.connect()
+    try:
+        connections = {r["platform"]: dict(r) for r in conn.execute("SELECT * FROM connections").fetchall()}
+        posts = conn.execute("SELECT * FROM posts").fetchall()
+
+        refreshed, failed = 0, 0
+        for post in posts:
+            connection = connections.get(post["platform"])
+            if not connection or not connection["connected"]:
+                continue
+            uploader = UPLOADERS[post["platform"]]
+            try:
+                stats = uploader.get_stats(connection["access_token"], post["remote_id"])
+            except (NotConnectedError, UploadError):
+                failed += 1
+                continue
+            conn.execute(
+                """INSERT INTO stats (post_id, views, watch_time_seconds, fetched_at)
+                   VALUES (?, ?, ?, ?)""",
+                (post["id"], stats.views, stats.watch_time_seconds, time.time()),
+            )
+            refreshed += 1
+        conn.commit()
+        return {"refreshed": refreshed, "failed": failed}
+    finally:
+        conn.close()

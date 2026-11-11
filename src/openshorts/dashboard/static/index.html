@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenShorts Dashboard</title>
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<div class="bg-blobs" aria-hidden="true">
+  <span class="blob blob-a"></span>
+  <span class="blob blob-b"></span>
+  <span class="blob blob-c"></span>
+</div>
+
+<div class="app">
+  <header class="topbar glass">
+    <div class="brand">
+      <span class="brand-mark">OS</span>
+      <div>
+        <h1>OpenShorts</h1>
+        <p class="tagline">Drop a stream. Get the clips. Post them everywhere.</p>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="add">Add Video</button>
+      <button class="tab-btn" data-tab="clips">Clips</button>
+      <button class="tab-btn" data-tab="connections">Connections</button>
+      <button class="tab-btn" data-tab="stats">Stats</button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ADD VIDEO ----------------------------------------------------- -->
+    <section class="tab-panel active" id="tab-add">
+      <div class="glass card drop-card">
+        <h2>Drop a stream or video</h2>
+        <p class="muted">Paste a VOD / stream URL, or a local file path on this machine.</p>
+        <form id="source-form" class="drop-form">
+          <input type="text" id="source-input" placeholder="https://… or C:\path\to\recording.mp4" required />
+          <button type="submit" class="btn btn-primary">Clip it</button>
+        </form>
+        <p class="hint" id="source-hint"></p>
+      </div>
+
+      <div class="glass card">
+        <h3>Processing</h3>
+        <div id="sources-list" class="sources-list">
+          <p class="empty-state">Nothing queued yet — drop a link above.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CLIPS ----------------------------------------------------------- -->
+    <section class="tab-panel" id="tab-clips">
+      <div class="glass card">
+        <div class="clips-header">
+          <h2>Clips</h2>
+          <div class="chip-row" id="category-filters">
+            <button class="chip active" data-category="">All</button>
+          </div>
+        </div>
+        <div id="clips-grid" class="clips-grid">
+          <p class="empty-state">No clips yet. Add a video to get started.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONNECTIONS ------------------------------------------------------ -->
+    <section class="tab-panel" id="tab-connections">
+      <div class="connections-grid" id="connections-grid"></div>
+    </section>
+
+    <!-- STATS -------------------------------------------------------------- -->
+    <section class="tab-panel" id="tab-stats">
+      <div class="glass card">
+        <div class="clips-header">
+          <h2>Performance</h2>
+          <button class="btn btn-ghost" id="refresh-stats-btn">Refresh stats</button>
+        </div>
+        <div class="stat-tiles" id="stat-tiles"></div>
+        <div id="best-performing-wrap"></div>
+        <div id="platform-breakdown"></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
