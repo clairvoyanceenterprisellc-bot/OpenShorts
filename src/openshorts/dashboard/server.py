@@ -256,7 +256,9 @@ def post_clip(clip_id: int, body: PostIn) -> dict:
         result = _call_with_refresh(
             body.platform,
             connection,
-            lambda token: uploader.upload(token, Path(clip["file_path"]), body.title, body.description, **extra),
+            lambda token: uploader.upload(
+                token, Path(clip["file_path"]), body.title, body.description, clip_id=clip["id"], **extra
+            ),
         )
     except NotConnectedError as exc:
         raise HTTPException(400, str(exc)) from exc

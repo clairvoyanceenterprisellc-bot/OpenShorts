@@ -5,9 +5,12 @@ takes a `video_url` it fetches server-side — it does not accept raw file
 bytes from your machine. That means your clip needs to be reachable at a
 public HTTPS URL before Instagram can ingest it, which a localhost dashboard
 can't provide on its own. Set `public_base_url` in the Instagram connection
-(Connections tab) to wherever you're hosting clips (S3/Cloudflare R2/your own
-server) once you have that set up — `upload()` raises `UploadError` with this
-explanation if it's missing, rather than silently failing.
+(Connections tab) to wherever the dashboard itself is publicly reachable from
+(e.g. a Cloudflare Tunnel pointed at it) — `upload()` raises `UploadError`
+with this explanation if it's missing, rather than silently failing. The
+video URL handed to Instagram is that base URL plus this dashboard's own
+`/api/clips/{id}/file` route (by clip id, not filename) — so `public_base_url`
+needs to point at the dashboard, not at a separate file host.
 
 Needs an access token for an Instagram Business/Creator account linked to a
 Facebook Page, with `instagram_content_publish` permission.
@@ -36,8 +39,10 @@ def upload(
     file_path: Path,
     title: str,
     description: str,
+    clip_id: int | None = None,
     ig_user_id: str | None = None,
     public_base_url: str | None = None,
+    **_ignored,
 ) -> PostResult:
     if not is_connected(token):
         raise NotConnectedError("No Instagram access token saved.")
@@ -45,11 +50,14 @@ def upload(
         raise UploadError("No Instagram Business account id configured (set it in Connections).")
     if not public_base_url:
         raise UploadError(
-            "Instagram needs clips at a public URL, not a local file. "
-            "Set 'public_base_url' on the Instagram connection to where your clips are hosted."
+            "Instagram needs clips at a public URL, not a local file. Set 'public_base_url' on the "
+            "Instagram connection to wherever this dashboard is publicly reachable from (e.g. a "
+            "Cloudflare Tunnel pointed at it)."
         )
+    if clip_id is None:
+        raise UploadError("Instagram upload needs the clip's id to build its public URL.")
 
-    video_url = f"{public_base_url.rstrip('/')}/{Path(file_path).name}"
+    video_url = f"{public_base_url.rstrip('/')}/api/clips/{clip_id}/file"
 
     with httpx.Client(timeout=60.0) as client:
         create = client.post(
