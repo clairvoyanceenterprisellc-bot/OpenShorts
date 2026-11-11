@@ -1,0 +1,24 @@
+[project]
+name = "openshorts"
+version = "0.1.0"
+description = "Auto-detect highlights in gameplay recordings and cut them into short clips"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "numpy>=1.24",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+openshorts = "openshorts.cli:main"
+
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

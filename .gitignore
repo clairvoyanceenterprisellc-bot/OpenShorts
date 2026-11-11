@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+
+# footage / output — never commit video
+*.mp4
+*.mkv
+*.mov
+*.wav
+clips/
