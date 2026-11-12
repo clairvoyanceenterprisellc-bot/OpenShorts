@@ -137,7 +137,12 @@ def upload(token: str, file_path: Path, title: str, description: str, **_ignored
             INIT_URL,
             headers=headers,
             json={
-                "post_info": {"title": title[:150], "privacy_level": "SELF_ONLY"},
+                # TikTok's "title" field is the full caption shown with the video, same role
+                # as description on other platforms -- hashtags/mentions need no special
+                # syntax, just space/newline separation (which build_description already
+                # produces). Real limit is 2200 UTF-16 code units, not the 150 this used to
+                # assume. `title` alone (the bare clip title with no hashtags) is unused here.
+                "post_info": {"title": description[:2200], "privacy_level": "SELF_ONLY"},
                 "source_info": {
                     "source": "FILE_UPLOAD",
                     "video_size": size,
