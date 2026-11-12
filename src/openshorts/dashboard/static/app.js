@@ -219,6 +219,12 @@ async function loadConnections() {
       <input type="text" data-field="ig_user_id" placeholder="Instagram Business account id" />
       <input type="text" data-field="public_base_url" placeholder="Public URL where your clips are hosted (https://…)" />
     ` : "";
+    const tiktokOAuth = platform === "tiktok" ? `
+      <a class="btn btn-primary btn-small" href="/oauth/tiktok/start" style="display:inline-block;text-decoration:none;margin-bottom:10px">
+        Connect with TikTok
+      </a>
+      <p class="muted" style="margin:0 0 10px">— or paste a token manually —</p>
+    ` : "";
     return `
       <div class="glass connection-card" data-platform="${platform}">
         <div class="conn-head">
@@ -226,6 +232,7 @@ async function loadConnections() {
           <span class="conn-status"><span class="dot ${connected ? "connected" : "disconnected"}"></span>${connected ? "Connected" : "Not connected"}</span>
         </div>
         <p class="conn-card-note">${PLATFORMS[platform].docs}</p>
+        ${tiktokOAuth}
         <input type="text" data-field="access_token" placeholder="${row.token_preview ? "Token saved (" + row.token_preview + ") — paste to replace" : "Paste access token"}" />
         ${extraFields}
         <div class="conn-actions">

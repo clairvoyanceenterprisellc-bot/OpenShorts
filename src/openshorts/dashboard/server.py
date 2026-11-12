@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import secrets
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -17,18 +18,31 @@ from openshorts.dashboard import db, pipeline
 from openshorts.dashboard.categorize import ALL_CATEGORIES, CATEGORY_LABELS
 from openshorts.dashboard.metadata import build_description, build_title
 from openshorts.dashboard.uploaders import REGISTRY as UPLOADERS
+from openshorts.dashboard.uploaders import tiktok as tiktok_uploader
 from openshorts.dashboard.uploaders.base import NotConnectedError, TokenExpiredError, UploadError
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# OAuth CSRF state tokens, in-memory: this is a single-process local
+# dashboard, so there's no need for persistence, just a short-lived check
+# that the callback matches a /start we actually issued.
+_oauth_states: dict[str, float] = {}
+_OAUTH_STATE_TTL = 600  # seconds
 
-def _persist_token(platform: str, token: str) -> None:
+
+def _persist_token(platform: str, token: str, meta: dict | None = None) -> None:
     conn = db.connect()
     try:
-        conn.execute(
-            "UPDATE connections SET access_token = ?, updated_at = ? WHERE platform = ?",
-            (token, time.time(), platform),
-        )
+        if meta is not None:
+            conn.execute(
+                "UPDATE connections SET access_token = ?, meta_json = ?, updated_at = ? WHERE platform = ?",
+                (token, json.dumps(meta), time.time(), platform),
+            )
+        else:
+            conn.execute(
+                "UPDATE connections SET access_token = ?, updated_at = ? WHERE platform = ?",
+                (token, time.time(), platform),
+            )
         conn.commit()
     finally:
         conn.close()
@@ -38,7 +52,13 @@ def _call_with_refresh(platform: str, connection: dict, call):
     """Run `call(access_token)`; on a TokenExpiredError, refresh once (if the
     uploader supports it) and retry. `connection` is mutated in place so a
     caller looping over multiple calls for the same platform reuses the
-    refreshed token instead of refreshing again on every iteration."""
+    refreshed token instead of refreshing again on every iteration.
+
+    `refresh_access_token` returns {"access_token": ..., **meta_updates} --
+    some platforms (TikTok) rotate the refresh token on every use, so any
+    extra keys beyond access_token get merged back into the saved meta,
+    not just the token, or the *next* refresh would use a dead refresh_token.
+    """
     try:
         return call(connection["access_token"])
     except TokenExpiredError:
@@ -46,8 +66,15 @@ def _call_with_refresh(platform: str, connection: dict, call):
         if not refresher:
             raise
         meta = json.loads(connection["meta_json"] or "{}")
-        new_token = refresher(meta)
-        _persist_token(platform, new_token)
+        result = refresher(meta)
+        new_token = result["access_token"]
+        meta_updates = {k: v for k, v in result.items() if k != "access_token"}
+        if meta_updates:
+            meta.update(meta_updates)
+            _persist_token(platform, new_token, meta)
+            connection["meta_json"] = json.dumps(meta)
+        else:
+            _persist_token(platform, new_token)
         connection["access_token"] = new_token
         return call(new_token)
 
@@ -229,6 +256,79 @@ def clear_connection(platform: str) -> dict:
     finally:
         conn.close()
     return {"platform": platform, "connected": False}
+
+
+# ------------------------------------------------------------- tiktok oauth --
+# TikTok requires an HTTPS redirect URI (no localhost, unlike Google), so
+# this goes through real server routes behind a public tunnel rather than a
+# throwaway local server. See scripts/get_youtube_token.py's docstring and
+# README for the Google-vs-TikTok redirect difference.
+
+def _cleanup_oauth_states() -> None:
+    cutoff = time.time() - _OAUTH_STATE_TTL
+    for s in [s for s, ts in _oauth_states.items() if ts < cutoff]:
+        del _oauth_states[s]
+
+
+@app.get("/oauth/tiktok/start")
+def tiktok_oauth_start():
+    config = tiktok_uploader.load_app_config()
+    if not config:
+        raise HTTPException(
+            400,
+            f"No TikTok app config saved at {tiktok_uploader.APP_CONFIG_FILE}. "
+            f"Needs client_key, client_secret, redirect_uri from your TikTok Developer app.",
+        )
+    _cleanup_oauth_states()
+    state = secrets.token_urlsafe(16)
+    _oauth_states[state] = time.time()
+    url = tiktok_uploader.build_authorize_url(config["client_key"], config["redirect_uri"], state)
+    return RedirectResponse(url)
+
+
+@app.get("/oauth/tiktok/callback")
+def tiktok_oauth_callback(
+    code: Optional[str] = None, state: Optional[str] = None,
+    error: Optional[str] = None, error_description: Optional[str] = None,
+):
+    if error:
+        return HTMLResponse(f"<h1>TikTok authorization failed</h1><p>{error}: {error_description}</p>", status_code=400)
+    if not state or state not in _oauth_states:
+        raise HTTPException(400, "Invalid or expired OAuth state -- start over from the Connections tab.")
+    del _oauth_states[state]
+    if not code:
+        raise HTTPException(400, "TikTok didn't return an authorization code.")
+
+    config = tiktok_uploader.load_app_config()
+    if not config:
+        raise HTTPException(400, f"No TikTok app config saved at {tiktok_uploader.APP_CONFIG_FILE}.")
+
+    token_data = tiktok_uploader.exchange_code(
+        config["client_key"], config["client_secret"], code, config["redirect_uri"],
+    )
+    meta = {
+        "refresh_token": token_data.get("refresh_token"),
+        "client_key": config["client_key"],
+        "client_secret": config["client_secret"],
+        "open_id": token_data.get("open_id"),
+    }
+    conn = db.connect()
+    try:
+        conn.execute(
+            """INSERT INTO connections (platform, access_token, meta_json, connected, updated_at)
+               VALUES ('tiktok', ?, ?, 1, ?)
+               ON CONFLICT(platform) DO UPDATE SET
+                 access_token = excluded.access_token, meta_json = excluded.meta_json,
+                 connected = excluded.connected, updated_at = excluded.updated_at""",
+            (token_data["access_token"], json.dumps(meta), time.time()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return HTMLResponse(
+        "<h1>TikTok connected</h1><p>You can close this tab and go back to the OpenShorts dashboard.</p>"
+    )
 
 
 # -------------------------------------------------------------------- post --

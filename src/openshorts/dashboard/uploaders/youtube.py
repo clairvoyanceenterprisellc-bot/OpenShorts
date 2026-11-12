@@ -41,8 +41,10 @@ def is_connected(token: str) -> bool:
     return bool(token) and len(token) > 20
 
 
-def refresh_access_token(meta: dict) -> str:
+def refresh_access_token(meta: dict) -> dict:
     """Mint a fresh access token from the refresh_token saved alongside it.
+    Returns {"access_token": ...} -- Google's refresh tokens don't rotate on
+    use (unlike TikTok's), so there's no updated refresh_token to pass back.
 
     Requires `refresh_token`, `client_id`, `client_secret` in `meta` — exactly
     what scripts/get_youtube_token.py saves when it requests offline access.
@@ -65,7 +67,7 @@ def refresh_access_token(meta: dict) -> str:
         )
     if resp.status_code != 200:
         raise UploadError(f"YouTube token refresh failed: {resp.status_code} {resp.text}")
-    return resp.json()["access_token"]
+    return {"access_token": resp.json()["access_token"]}
 
 
 def upload(token: str, file_path: Path, title: str, description: str, **_ignored) -> PostResult:
