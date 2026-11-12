@@ -189,10 +189,10 @@ async function loadClips() {
       btn.disabled = true;
       btn.textContent = "Posting…";
       try {
-        await api(`/api/clips/${btn.dataset.clip}/post`, {
+        const result = await api(`/api/clips/${btn.dataset.clip}/post`, {
           method: "POST", body: JSON.stringify({ platform: btn.dataset.platform }),
         });
-        showToast(`Posted to ${PLATFORMS[btn.dataset.platform].label}.`);
+        showToast(`Posted to ${PLATFORMS[btn.dataset.platform].label}: "${result.title}"`);
         loadClips();
       } catch (err) {
         showToast(err.message, true);

@@ -2,9 +2,14 @@
 
 Needs an access token from a TikTok for Developers app with the
 `video.publish` scope approved (TikTok reviews Direct Post access before
-granting it — the sandbox/unaudited tier only allows posting as drafts to
-your own test account). Paste the resulting access token into the
-dashboard's Connections tab.
+granting it). Paste the resulting access token into the dashboard's
+Connections tab.
+
+Posts request `privacy_level: PUBLIC_TO_EVERYONE` — but until your app
+passes TikTok's audit for Direct Post, the sandbox/unaudited tier silently
+downgrades every post to a private draft visible only to your own account,
+regardless of what's requested here. That's a TikTok-side restriction, not
+something this code can override.
 """
 
 from __future__ import annotations
@@ -40,7 +45,7 @@ def upload(token: str, file_path: Path, title: str, description: str, **_ignored
             INIT_URL,
             headers=headers,
             json={
-                "post_info": {"title": title[:150], "privacy_level": "SELF_ONLY"},
+                "post_info": {"title": title[:150], "privacy_level": "PUBLIC_TO_EVERYONE"},
                 "source_info": {
                     "source": "FILE_UPLOAD",
                     "video_size": size,

@@ -76,7 +76,7 @@ def upload(token: str, file_path: Path, title: str, description: str, **_ignored
     size = file_path.stat().st_size
     metadata = {
         "snippet": {"title": title[:100], "description": description[:5000], "categoryId": "20"},
-        "status": {"privacyStatus": "private"},
+        "status": {"privacyStatus": "public"},
     }
 
     with httpx.Client(timeout=60.0) as client:

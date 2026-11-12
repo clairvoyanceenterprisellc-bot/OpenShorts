@@ -16,12 +16,14 @@ from openshorts.dashboard.server import app
 from openshorts.dashboard.uploaders.base import PostResult, StatsResult, TokenExpiredError
 
 
-def _make_fake_uploader(refresh_meta_seen: list):
+def _make_fake_uploader(refresh_meta_seen: list, upload_calls: list | None = None):
     """A fake platform module: first call with the stale token raises
     TokenExpiredError, refresh_access_token mints a new one, and the retried
     call with the new token succeeds."""
 
     def upload(token, file_path, title, description, **_ignored):
+        if upload_calls is not None:
+            upload_calls.append((title, description))
         if token == "stale-token":
             raise TokenExpiredError("401")
         assert token == "fresh-token"
@@ -46,16 +48,16 @@ def _make_fake_uploader(refresh_meta_seen: list):
     )
 
 
-def _seed_connection(db_path, meta: dict) -> None:
+def _seed_connection(db_path, meta: dict, token: str = "stale-token") -> None:
     conn = db.connect(db_path)
     try:
         conn.execute(
             """INSERT INTO connections (platform, access_token, meta_json, connected, updated_at)
-               VALUES ('youtube', 'stale-token', ?, 1, ?)
+               VALUES ('youtube', ?, ?, 1, ?)
                ON CONFLICT(platform) DO UPDATE SET
                  access_token = excluded.access_token, meta_json = excluded.meta_json,
                  connected = excluded.connected, updated_at = excluded.updated_at""",
-            (json.dumps(meta), time.time()),
+            (token, json.dumps(meta), time.time()),
         )
         conn.commit()
     finally:
@@ -89,6 +91,50 @@ def fake_youtube(monkeypatch):
     fake = _make_fake_uploader(seen_meta)
     monkeypatch.setitem(server.UPLOADERS, "youtube", fake)
     return seen_meta
+
+
+@pytest.fixture
+def fake_youtube_tracked(monkeypatch):
+    """Same fake uploader, but also records every (title, description) it was called with."""
+    upload_calls: list = []
+    fake = _make_fake_uploader(refresh_meta_seen=[], upload_calls=upload_calls)
+    monkeypatch.setitem(server.UPLOADERS, "youtube", fake)
+    return upload_calls
+
+
+def test_post_clip_uses_auto_generated_gta6_title_and_hashtags(isolated_dashboard, tmp_path, fake_youtube_tracked):
+    _seed_connection(isolated_dashboard, meta={}, token="fresh-token")
+    clip_id = _seed_clip_and_post(isolated_dashboard, tmp_path)
+
+    client = TestClient(app)
+    resp = client.post(f"/api/clips/{clip_id}/post", json={"platform": "youtube"})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["title"] != "OpenShorts clip"  # the old static default is gone
+    assert "GTA" in resp.json()["title"]
+
+    [(title, description)] = fake_youtube_tracked
+    assert title == resp.json()["title"]
+    assert "#GTA6" in description
+    assert "#Shorts" in description  # platform-specific tag for youtube
+
+
+def test_duplicate_post_to_same_platform_is_rejected(isolated_dashboard, tmp_path, fake_youtube_tracked):
+    _seed_connection(isolated_dashboard, meta={}, token="fresh-token")
+    clip_id = _seed_clip_and_post(isolated_dashboard, tmp_path)
+
+    client = TestClient(app)
+    first = client.post(f"/api/clips/{clip_id}/post", json={"platform": "youtube"})
+    assert first.status_code == 200
+
+    second = client.post(f"/api/clips/{clip_id}/post", json={"platform": "youtube"})
+    assert second.status_code == 409
+    assert len(fake_youtube_tracked) == 1  # upload() was never called a second time
+
+    conn = db.connect(isolated_dashboard)
+    count = conn.execute("SELECT COUNT(*) AS n FROM posts WHERE clip_id = ?", (clip_id,)).fetchone()["n"]
+    conn.close()
+    assert count == 1
 
 
 def test_post_clip_refreshes_expired_token_and_retries(isolated_dashboard, tmp_path, fake_youtube):
@@ -147,3 +193,25 @@ def test_upload_with_no_refresh_support_surfaces_as_upload_error(isolated_dashbo
     client = TestClient(app)
     resp = client.post(f"/api/clips/{clip_id}/post", json={"platform": "youtube"})
     assert resp.status_code == 502  # bubbles up as a normal failure instead of crashing
+
+
+def test_connections_list_never_leaks_secrets_from_meta(isolated_dashboard):
+    """GET /api/connections can be reached through a public tunnel (Instagram's
+    public_base_url points at this same dashboard) -- meta_json holds real
+    secrets (refresh_token, client_secret) and must never come back verbatim."""
+    secret_meta = {
+        "refresh_token": "super-secret-refresh-token",
+        "client_id": "cid",
+        "client_secret": "super-secret-client-secret",
+    }
+    _seed_connection(isolated_dashboard, meta=secret_meta, token="fresh-token")
+
+    client = TestClient(app)
+    body = client.get("/api/connections").content.decode()
+
+    assert "meta_json" not in body
+    assert "super-secret-refresh-token" not in body
+    assert "super-secret-client-secret" not in body
+
+    youtube_row = next(c for c in client.get("/api/connections").json() if c["platform"] == "youtube")
+    assert youtube_row["has_meta"] is True

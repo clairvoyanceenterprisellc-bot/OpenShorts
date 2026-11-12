@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from openshorts.dashboard import db, pipeline
 from openshorts.dashboard.categorize import ALL_CATEGORIES, CATEGORY_LABELS
+from openshorts.dashboard.metadata import build_description, build_title
 from openshorts.dashboard.uploaders import REGISTRY as UPLOADERS
 from openshorts.dashboard.uploaders.base import NotConnectedError, TokenExpiredError, UploadError
 
@@ -172,6 +173,10 @@ class ConnectionIn(BaseModel):
 
 @app.get("/api/connections")
 def list_connections() -> list[dict]:
+    # meta_json holds secrets (refresh_token, client_secret, Instagram's own
+    # access config) -- never return it verbatim, even though this endpoint
+    # normally only serves localhost, since this dashboard may also be
+    # reachable through a public tunnel (e.g. for Instagram's public_base_url).
     conn = db.connect()
     try:
         rows = conn.execute("SELECT * FROM connections").fetchall()
@@ -182,6 +187,8 @@ def list_connections() -> list[dict]:
         d = dict(r)
         token = d.pop("access_token", None) or ""
         d["token_preview"] = f"...{token[-4:]}" if token else None
+        meta = json.loads(d.pop("meta_json", None) or "{}")
+        d["has_meta"] = bool(meta)
         out.append(d)
     return out
 
@@ -228,8 +235,8 @@ def clear_connection(platform: str) -> dict:
 
 class PostIn(BaseModel):
     platform: str
-    title: Optional[str] = "OpenShorts clip"
-    description: Optional[str] = ""
+    title: Optional[str] = None
+    description: Optional[str] = None
 
 
 @app.post("/api/clips/{clip_id}/post")
@@ -239,20 +246,36 @@ def post_clip(clip_id: int, body: PostIn) -> dict:
 
     conn = db.connect()
     try:
-        clip = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
-        if not clip:
+        clip_row = conn.execute("SELECT * FROM clips WHERE id = ?", (clip_id,)).fetchone()
+        if not clip_row:
             raise HTTPException(404, "Clip not found")
+        existing_post = conn.execute(
+            "SELECT * FROM posts WHERE clip_id = ? AND platform = ?", (clip_id, body.platform)
+        ).fetchone()
         connection_row = conn.execute(
             "SELECT * FROM connections WHERE platform = ?", (body.platform,)
         ).fetchone()
     finally:
         conn.close()
 
+    if existing_post:
+        # Enforced server-side, not just a disabled button -- a clip never goes
+        # out twice to the same platform, no matter how the request got sent.
+        raise HTTPException(
+            409,
+            f"This clip was already posted to {body.platform} "
+            f"({existing_post['remote_url'] or existing_post['remote_id']}).",
+        )
+
     if not connection_row or not connection_row["connected"]:
         raise HTTPException(
             400,
             f"{body.platform} isn't connected yet. Add an access token in the Connections tab first.",
         )
+
+    clip = dict(clip_row)
+    title = body.title or build_title(clip)
+    description = body.description if body.description is not None else build_description(clip, body.platform)
 
     connection = dict(connection_row)
     uploader = UPLOADERS[body.platform]
@@ -262,7 +285,7 @@ def post_clip(clip_id: int, body: PostIn) -> dict:
             body.platform,
             connection,
             lambda token: uploader.upload(
-                token, Path(clip["file_path"]), body.title, body.description, clip_id=clip["id"], **extra
+                token, Path(clip["file_path"]), title, description, clip_id=clip["id"], **extra
             ),
         )
     except NotConnectedError as exc:
@@ -281,7 +304,10 @@ def post_clip(clip_id: int, body: PostIn) -> dict:
     finally:
         conn.close()
 
-    return {"platform": body.platform, "remote_id": result.remote_id, "remote_url": result.remote_url}
+    return {
+        "platform": body.platform, "remote_id": result.remote_id, "remote_url": result.remote_url,
+        "title": title,
+    }
 
 
 # ------------------------------------------------------------------- stats --
