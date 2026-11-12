@@ -162,6 +162,9 @@ async function loadClips() {
             <span>t=${clip.peak_time.toFixed(1)}s</span>
             <span class="clip-score">score ${clip.score.toFixed(1)}</span>
           </div>
+          ${clip.caption
+            ? `<p class="clip-caption">"${escapeHtml(clip.caption)}"</p>`
+            : `<p class="clip-caption clip-caption-empty">No speech detected in this clip</p>`}
           <select class="category-select" data-clip="${clip.id}">
             ${Object.entries(CATEGORIES).map(([k, label]) =>
               `<option value="${k}" ${k === clip.category ? "selected" : ""}>${label}</option>`).join("")}

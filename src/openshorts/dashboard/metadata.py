@@ -1,10 +1,14 @@
 """Auto-generates a unique title + hashtag-loaded description per clip.
 
-Every clip gets its own title (varied by category + its own clip id, so two
-clips are never identical) and a GTA 6 hashtag set, tuned a little per
-platform (YouTube wants #Shorts, TikTok/Instagram want #fyp/#reels-style
-tags). This only fires when the caller doesn't supply title/description
-explicitly -- see server.py's post_clip.
+If the clip has a transcribed `caption` (pipeline.py runs speech-to-text on
+every clip's own audio -- see transcribe.py), that becomes the title: it's
+inherently unique per clip since it's literally what's said in it, not just
+a category label with a number. Clips with no usable speech (gameplay sound
+only, silence) fall back to the category-flavored templates below. Either
+way, the description gets a GTA 6 hashtag set, tuned a little per platform
+(YouTube wants #Shorts, TikTok/Instagram want #fyp/#reels-style tags). This
+only fires when the caller doesn't supply title/description explicitly --
+see server.py's post_clip.
 """
 
 from __future__ import annotations
@@ -53,6 +57,9 @@ PLATFORM_HASHTAGS = {
 
 
 def build_title(clip: dict) -> str:
+    caption = clip.get("caption")
+    if caption:
+        return f"GTA 6 — {caption}"
     templates = TITLE_TEMPLATES.get(clip["category"], TITLE_TEMPLATES["unsorted"])
     template = templates[clip["id"] % len(templates)]
     return template.format(n=clip["id"])

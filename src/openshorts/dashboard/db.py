@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS clips (
     category TEXT NOT NULL DEFAULT 'unsorted',
     peak_time REAL NOT NULL,
     score REAL NOT NULL,
+    caption TEXT,
     created_at REAL NOT NULL
 );
 
@@ -80,6 +81,10 @@ def init_db(db_path: Path | None = None) -> None:
         conn.executescript(SCHEMA)
         try:  # migrate DBs created before clip_count existed
             conn.execute("ALTER TABLE sources ADD COLUMN clip_count INTEGER")
+        except sqlite3.OperationalError:
+            pass
+        try:  # migrate DBs created before caption existed
+            conn.execute("ALTER TABLE clips ADD COLUMN caption TEXT")
         except sqlite3.OperationalError:
             pass
         for platform in ("youtube", "tiktok", "instagram"):

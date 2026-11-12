@@ -161,6 +161,8 @@ html, body {
 .clip-card video { width: 100%; aspect-ratio: 9/16; background: #000; display: block; object-fit: cover; max-height: 320px; }
 .clip-card-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .clip-meta { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--ink-dim); }
+.clip-caption { margin: 0; font-size: 0.82rem; font-style: italic; color: var(--ink); line-height: 1.4; }
+.clip-caption-empty { color: var(--ink-dim); font-style: normal; }
 .clip-score { color: var(--accent-c); font-weight: 700; }
 
 .category-select {

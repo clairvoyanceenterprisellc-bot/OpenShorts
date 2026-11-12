@@ -10,6 +10,7 @@ from openshorts.dashboard import db
 from openshorts.dashboard.categorize import assign_categories
 from openshorts.detect import detect_highlights
 from openshorts.ffmpeg_utils import cut_clip
+from openshorts.transcribe import transcribe_clip
 
 DATA_DIR = db.APP_DIR
 DOWNLOADS_DIR = DATA_DIR / "downloads"
@@ -137,10 +138,11 @@ def ingest_source(
             category_dir = CLIPS_DIR / category
             clip_path = category_dir / f"source_{source_id}_clip{i:02d}.mp4"
             cut_clip(video_path, clip_path, highlight.clip_start, highlight.clip_duration)
+            caption = transcribe_clip(clip_path)  # None if no usable speech -- that's fine
             conn.execute(
-                """INSERT INTO clips (source_id, file_path, category, peak_time, score, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (source_id, str(clip_path), category, highlight.time, highlight.score, time.time()),
+                """INSERT INTO clips (source_id, file_path, category, peak_time, score, caption, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (source_id, str(clip_path), category, highlight.time, highlight.score, caption, time.time()),
             )
             conn.commit()
 

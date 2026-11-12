@@ -20,6 +20,19 @@ def test_unknown_category_falls_back_to_unsorted_templates():
     assert "GTA" in title
 
 
+def test_title_prefers_transcribed_caption_when_present():
+    clip = {"id": 7, "category": "best_moments", "caption": "No way he just did that"}
+    title = build_title(clip)
+    assert title == "GTA 6 — No way he just did that"
+
+
+def test_title_falls_back_to_template_when_no_caption():
+    clip_no_caption = {"id": 7, "category": "best_moments", "caption": None}
+    clip_missing_key = {"id": 7, "category": "best_moments"}
+    assert "No way" not in build_title(clip_no_caption)
+    assert build_title(clip_no_caption) == build_title(clip_missing_key)
+
+
 def test_description_includes_gta6_hashtags_and_platform_tag():
     desc = build_description({"id": 1, "category": "best_moments"}, "youtube")
     for tag in GTA6_HASHTAGS:
