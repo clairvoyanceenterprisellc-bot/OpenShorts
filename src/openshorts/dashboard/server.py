@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -102,6 +102,14 @@ def terms() -> FileResponse:
 @app.get("/privacy")
 def privacy() -> FileResponse:
     return FileResponse(STATIC_DIR / "privacy.html")
+
+
+@app.get("/oauth/tiktok/callback/tiktokP07l0xDqtVcLCcQUjLmTpqSzUEyo80n4.txt")
+def tiktok_domain_verification() -> PlainTextResponse:
+    # TikTok's "URL properties" ownership check for the redirect URI, required
+    # before submitting the app for Direct Post review. Static/one-time -- the
+    # exact filename and token are whatever TikTok's dashboard generated.
+    return PlainTextResponse("tiktok-developers-site-verification=P07l0xDqtVcLCcQUjLmTpqSzUEyo80n4")
 
 
 # ---------------------------------------------------------------- sources --
