@@ -47,9 +47,10 @@ def find_highlights_in_audio(
     window_s: float = 0.5,
     threshold: float = 2.5,
     min_gap_s: float = 15.0,
-    lead_in_s: float = 3.0,
-    lead_out_s: float = 5.0,
+    lead_in_s: float = 5.0,
+    lead_out_s: float = 15.0,
     duration_s: float | None = None,
+    min_clip_duration_s: float = 15.0,
 ) -> list[Highlight]:
     """Find loudness-spike highlights in a mono PCM signal."""
     window_samples = max(1, int(window_s * sample_rate))
@@ -84,6 +85,14 @@ def find_highlights_in_audio(
         peak_time = (idx + 0.5) * window_s
         clip_start = max(0.0, peak_time - lead_in_s)
         clip_end = min(total_duration, peak_time + lead_out_s)
+
+        if clip_end - clip_start < min_clip_duration_s:
+            # Near the start/end of the video, lead_in/lead_out can get
+            # clamped short -- pull the shortfall from whichever side has
+            # room left, so clips don't end up far shorter than intended.
+            clip_end = min(total_duration, clip_start + min_clip_duration_s)
+            clip_start = max(0.0, clip_end - min_clip_duration_s)
+
         clip_duration = clip_end - clip_start
         if clip_duration <= 0:
             continue
@@ -103,8 +112,9 @@ def detect_highlights(
     window_s: float = 0.5,
     threshold: float = 2.5,
     min_gap_s: float = 15.0,
-    lead_in_s: float = 3.0,
-    lead_out_s: float = 5.0,
+    lead_in_s: float = 5.0,
+    lead_out_s: float = 15.0,
+    min_clip_duration_s: float = 15.0,
 ) -> list[Highlight]:
     """Detect highlights directly from a video file on disk."""
     video_path = Path(video_path)
@@ -119,4 +129,5 @@ def detect_highlights(
         lead_in_s=lead_in_s,
         lead_out_s=lead_out_s,
         duration_s=duration,
+        min_clip_duration_s=min_clip_duration_s,
     )

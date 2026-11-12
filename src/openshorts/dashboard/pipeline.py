@@ -98,8 +98,9 @@ def ingest_source(
     threshold: float = 2.5,
     window_s: float = 0.5,
     min_gap_s: float = 15.0,
-    lead_in_s: float = 3.0,
-    lead_out_s: float = 5.0,
+    lead_in_s: float = 5.0,
+    lead_out_s: float = 15.0,
+    min_clip_duration_s: float = 15.0,
 ) -> None:
     """Run the full pipeline for one source: download -> detect -> cut -> categorize.
 
@@ -122,7 +123,7 @@ def ingest_source(
         _set_status(conn, source_id, "detecting")
         highlights = detect_highlights(
             video_path, window_s=window_s, threshold=threshold, min_gap_s=min_gap_s,
-            lead_in_s=lead_in_s, lead_out_s=lead_out_s,
+            lead_in_s=lead_in_s, lead_out_s=lead_out_s, min_clip_duration_s=min_clip_duration_s,
         )
 
         if not highlights:

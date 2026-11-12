@@ -8,7 +8,7 @@ Built to be ready for GTA 6: point it at a recording session, get back a folder 
 
 1. **Extract audio** from the source video with `ffmpeg`.
 2. **Score loudness over time** using a rolling RMS window — sudden spikes (explosions, gunfire, shouting, chat reactions) usually mean something happened.
-3. **Find peaks** above a threshold, merge nearby ones, and pad each with a configurable amount of lead-in/lead-out.
+3. **Find peaks** above a threshold, merge nearby ones, and pad each with a configurable amount of lead-in/lead-out (defaults: 5s before, 15s after — a 20s clip, with a 15s floor that extends short edge-clamped clips so nothing ends up tiny near the start/end of a video).
 4. **Cut clips** from the source video at those timestamps with `ffmpeg`, reframed to a 1080x1920 vertical canvas and capped at 60 seconds — actual short-format output, not a trimmed-down landscape long-form video. The source footage isn't cropped to get there: it's scaled to fit the vertical frame's width with a blurred, cropped copy of itself filling the rest, so nothing on the sides of the gameplay gets cut off.
 
 This is a simple, model-free MVP. It doesn't know what GTA 6 looks like yet — it just finds "loud moments." That's deliberately the first slice: it works on any gameplay footage today, and more detectors (kill-feed OCR, scene-cut detection, chat/Twitch reaction mining) can be added later behind the same `Highlight` interface.
@@ -34,8 +34,8 @@ openshorts scan session.mp4
 # Find highlights and cut clips into ./clips
 openshorts clip session.mp4 --out clips/
 
-# Tune sensitivity
-openshorts clip session.mp4 --out clips/ --threshold 2.5 --min-gap 20 --lead-in 3 --lead-out 5
+# Tune sensitivity or clip length (defaults: 5s lead-in, 15s lead-out, 15s minimum)
+openshorts clip session.mp4 --out clips/ --threshold 2.5 --min-gap 20 --lead-in 5 --lead-out 25
 
 # Keep the source's original landscape framing instead of reframing vertical, or change the length cap
 openshorts clip session.mp4 --out clips/ --no-vertical
@@ -53,7 +53,7 @@ openshorts dashboard
 
 Four tabs:
 
-- **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done). Clips always come out vertical (1080x1920) and capped at 60 seconds, ready to post as-is — the dashboard doesn't have a `--no-vertical` equivalent, since every clip from here is meant to go straight to a platform that expects Shorts/Reels format.
+- **Add Video** — paste a stream/VOD URL (downloaded via `yt-dlp`) or a local file path. Runs the same detect → cut pipeline as the CLI in the background and shows live progress (queued → downloading → detecting → clipping → done). Clips always come out vertical (1080x1920), land in the 15-30s range (nominal 20s, never below a 15s floor), and are capped at 60 seconds — ready to post as-is. The dashboard doesn't have a `--no-vertical` equivalent, since every clip from here is meant to go straight to a platform that expects Shorts/Reels format. A **Sensitivity** slider on the form maps to `--threshold` — lower it for quieter/more consistent audio (real commentary-heavy footage often needs ~1.5-2.0 instead of the 2.5 default); a completed source that found nothing shows "Done — 0 clips found" rather than looking indistinguishable from a working one.
 
   **Two separate things have to work for a YouTube URL to download, and both bit us in testing:**
 

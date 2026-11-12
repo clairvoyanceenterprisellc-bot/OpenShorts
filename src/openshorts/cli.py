@@ -17,10 +17,12 @@ def _common_detect_options(f):
                       help="Audio analysis window size, in seconds.")(f)
     f = click.option("--min-gap", "min_gap_s", default=15.0, show_default=True,
                       help="Minimum seconds between two distinct highlights.")(f)
-    f = click.option("--lead-in", "lead_in_s", default=3.0, show_default=True,
+    f = click.option("--lead-in", "lead_in_s", default=5.0, show_default=True,
                       help="Seconds of footage to include before each highlight.")(f)
-    f = click.option("--lead-out", "lead_out_s", default=5.0, show_default=True,
+    f = click.option("--lead-out", "lead_out_s", default=15.0, show_default=True,
                       help="Seconds of footage to include after each highlight.")(f)
+    f = click.option("--min-clip-duration", "min_clip_duration_s", default=15.0, show_default=True,
+                      help="Floor on clip length -- extends short edge-clamped clips up to this.")(f)
     return f
 
 
@@ -33,11 +35,11 @@ def main() -> None:
 @click.argument("video", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @_common_detect_options
 def scan(video: Path, threshold: float, window_s: float, min_gap_s: float,
-          lead_in_s: float, lead_out_s: float) -> None:
+          lead_in_s: float, lead_out_s: float, min_clip_duration_s: float) -> None:
     """Detect highlights in VIDEO and print them, without cutting anything."""
     highlights = detect_highlights(
         video, window_s=window_s, threshold=threshold, min_gap_s=min_gap_s,
-        lead_in_s=lead_in_s, lead_out_s=lead_out_s,
+        lead_in_s=lead_in_s, lead_out_s=lead_out_s, min_clip_duration_s=min_clip_duration_s,
     )
     if not highlights:
         click.echo("No highlights found. Try lowering --threshold.")
@@ -60,11 +62,12 @@ def scan(video: Path, threshold: float, window_s: float, min_gap_s: float,
               help="Hard cap on clip length in seconds, regardless of lead-in/lead-out.")
 @_common_detect_options
 def clip(video: Path, out_dir: Path, vertical: bool, max_duration: float, threshold: float,
-          window_s: float, min_gap_s: float, lead_in_s: float, lead_out_s: float) -> None:
+          window_s: float, min_gap_s: float, lead_in_s: float, lead_out_s: float,
+          min_clip_duration_s: float) -> None:
     """Detect highlights in VIDEO and cut each one into OUT_DIR."""
     highlights = detect_highlights(
         video, window_s=window_s, threshold=threshold, min_gap_s=min_gap_s,
-        lead_in_s=lead_in_s, lead_out_s=lead_out_s,
+        lead_in_s=lead_in_s, lead_out_s=lead_out_s, min_clip_duration_s=min_clip_duration_s,
     )
     if not highlights:
         click.echo("No highlights found. Try lowering --threshold.")
