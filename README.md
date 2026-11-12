@@ -87,6 +87,16 @@ This runs Google's real OAuth consent flow (a browser tab opens for you to sign 
 
 Data (SQLite db, downloaded sources, cut clips) lives in `~/.openshorts/`, not in the repo.
 
+### Remote access (phone, Tailscale)
+
+`openshorts dashboard` binds to `0.0.0.0` by default (not just `127.0.0.1`), so it's reachable from other devices on your tailnet — e.g. from your phone at `http://<this-machine's-tailscale-IP>:8788` (find it with `tailscale ip -4`; MagicDNS hostnames can be flakier depending on your device's DNS setup, so the raw IP is the reliable fallback). There's no auth on this dashboard, so exposure is bounded entirely by your OS firewall, not by this bind address — on Windows, that means an inbound rule allowing TCP 8788, scoped to the Private profile (which Tailscale's virtual adapter uses, keeping it off your public/LAN profile):
+
+```powershell
+New-NetFirewallRule -DisplayName "OpenShorts Dashboard (Tailscale)" -Direction Inbound -Protocol TCP -LocalPort 8788 -Profile Private -Action Allow
+```
+
+Pass `--host 127.0.0.1` to go back to localhost-only if you don't want this.
+
 ## Status
 
 Early scaffold, built ahead of GTA 6's release so the pipeline is ready on day one. Audio-spike detection and the dashboard both work today on any gameplay video, and YouTube posting auto-refreshes its own token; game-specific detectors and the same refresh treatment for TikTok/Instagram are the natural next steps.

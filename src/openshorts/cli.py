@@ -82,13 +82,15 @@ def clip(video: Path, out_dir: Path, vertical: bool, max_duration: float, thresh
 
 
 @main.command()
-@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--host", default=None, show_default=True,
+              help="Defaults to 0.0.0.0 (reachable over Tailscale/LAN, not just localhost).")
 @click.option("--port", default=8788, show_default=True)
-def dashboard(host: str, port: int) -> None:
-    """Launch the local web dashboard at http://HOST:PORT."""
-    from openshorts.dashboard.__main__ import main as run_dashboard
+def dashboard(host: str | None, port: int) -> None:
+    """Launch the web dashboard at http://HOST:PORT."""
+    from openshorts.dashboard.__main__ import DEFAULT_HOST, main as run_dashboard
 
-    click.echo(f"OpenShorts dashboard running at http://{host}:{port}")
+    host = host or DEFAULT_HOST
+    click.echo(f"OpenShorts dashboard running at http://{host}:{port} (and http://127.0.0.1:{port} locally)")
     run_dashboard(host=host, port=port)
 
 
