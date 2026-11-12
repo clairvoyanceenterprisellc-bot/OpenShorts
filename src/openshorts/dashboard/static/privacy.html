@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>OpenShorts — Privacy Policy</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px;
+         background: #0a0b16; color: #eef0f8; line-height: 1.6; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; margin-top: 2em; color: #7dd3fc; }
+  a { color: #7dd3fc; }
+  code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; }
+  .updated { color: #a7acc4; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<h1>OpenShorts — Privacy Policy</h1>
+<p class="updated">Last updated: November 2026</p>
+
+<p>OpenShorts is a self-hosted tool that runs on a single person's own machine. There is no central server, no hosted backend, and no analytics or tracking operated by a third party — everything described below happens locally on that machine, under that person's own control.</p>
+
+<h2>What's stored, and where</h2>
+<ul>
+  <li><strong>Video files</strong> (downloaded source recordings and cut clips) are stored only on the local machine's disk, in <code>~/.openshorts/</code>. They are never uploaded anywhere except the specific platform (YouTube, TikTok, Instagram) the operator explicitly chooses to post a given clip to.</li>
+  <li><strong>OAuth access tokens and refresh tokens</strong> for connected platforms are stored locally in a SQLite database on the same machine. They are used only to make API calls to that platform on the operator's own behalf (uploading/posting content, checking view/stats). They are never transmitted to any third party.</li>
+  <li><strong>No analytics, telemetry, or usage tracking</strong> of any kind is collected by this tool itself.</li>
+</ul>
+
+<h2>Data sent to connected platforms</h2>
+<p>When a clip is posted, the video file and a generated title/description are sent directly to that platform's own official API (e.g. TikTok's Content Posting API, YouTube Data API). Each platform's own Privacy Policy governs how they handle that data once received. This tool does not add any additional data collection on top of what each platform's API inherently requires for posting (e.g. an access token proving the operator's own authorization).</p>
+
+<h2>No data sharing</h2>
+<p>Nothing processed by this tool is sold, shared, or disclosed to any third party outside of the specific connected platform a clip is explicitly posted to.</p>
+
+<h2>Deleting your data</h2>
+<p>Since everything is stored locally, deleting <code>~/.openshorts/</code> removes all locally stored video files, tokens, and metadata. Disconnecting a platform in the dashboard's Connections tab clears that platform's stored access token immediately.</p>
+
+<p>Questions: <a href="mailto:clairvoyanceenterprisellc@gmail.com">clairvoyanceenterprisellc@gmail.com</a></p>
+</body>
+</html>
